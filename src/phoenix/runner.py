@@ -3,29 +3,40 @@ import subprocess
 import yaml
 from pathlib import Path
 
-
-def read_jobq(path: Path):
-    with open(path, "r") as f:
-        return yaml.safe_load(f)["jobs"]
+from phoenix.jobgraph import JobGraph
+from phoenix.utils import now
 
 
-def get_runnable_jobs():
-    pass
+class JobRunner:
+    def __init__(self, graph: JobGraph) -> None:
+        self.graph = graph
 
+    def run(self, job_id: str):
+        spec = self.graph.get(job_id)
 
-def load_manifest():
-    pass
+        # log start here
 
+        start = now()
 
-def write_manifest():
-    pass
+        result = subprocess.run(
+            spec["command"],
+            shell=True,
+            capture_output=True,
+            text=True
+        )
 
+        finish = now()
 
-def save_checkpoint():
-    pass
+        duration = finish - start
 
+        # log end here
 
-def run_job(jobd):
-    for ji, jv in jobd.items():
-        jo = subprocess.run(jv["command"], capture_output=True, text=True, shell=True)
-        print(jo)
+        return {
+            "started_at": start,
+            "finished_at": finish,
+            "duration_s": duration,
+            "useful_work": self.graph.useful_work(job_id),
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip()
+        }
+
