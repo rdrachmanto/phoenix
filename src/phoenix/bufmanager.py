@@ -1,6 +1,11 @@
 from pathlib import Path
+import json
+import shutil
 
+from phoenix.jobgraph import JobGraph
 from phoenix.utils import now, atomic_write_json, log_event
+from phoenix.config import STATE_ROOT
+
 
 class BufferManager:
     def __init__(self, state_dir: Path):
@@ -21,21 +26,6 @@ class BufferManager:
         }
 
     def load_or_create_manifest(self):
-        """
-        Boot recovery starts here.
-
-        If manifest exists:
-            load it and continue.
-
-        If manifest does not exist:
-            create a fresh run.
-
-        If manifest is corrupted:
-            quarantine it and start fresh.
-
-        For research experiments, you may want to stop instead of starting
-        fresh after corruption. For a prototype, quarantine is okay.
-        """
         if not self.manifest_path.exists():
             manifest = self.empty_manifest()
             atomic_write_json(self.manifest_path, manifest)
@@ -60,17 +50,6 @@ class BufferManager:
         return manifest
 
     def recover(self):
-        """
-        Called once after boot.
-
-        For now this only logs what was recovered.
-
-        Later this can also:
-        - validate checkpoint files exist
-        - remove manifest entries with missing checkpoint files
-        - verify hashes
-        - compact stale checkpoint payloads
-        """
         completed = list(self.manifest["completed"].keys())
 
         log_event(
@@ -88,17 +67,6 @@ class BufferManager:
         return set(self.manifest["completed"].keys())
 
     def write_checkpoint(self, job_id: str, metadata: dict):
-        """
-        Writes one checkpoint payload for one completed stage.
-
-        This example stores only metadata.
-        Later, this could store:
-        - output file paths
-        - model intermediate output
-        - sensor batch ID
-        - compressed feature vector
-        - hash of artifacts
-        """
         checkpoint_path = self.checkpoint_dir / f"{job_id}.json"
 
         payload = {
@@ -111,18 +79,6 @@ class BufferManager:
         return checkpoint_path
 
     def mark_completed(self, job_id: str, metadata: dict):
-        """
-        Stage-boundary checkpointing happens here.
-
-        Order matters:
-        1. write checkpoint payload
-        2. update manifest atomically
-
-        If power dies before the manifest update, the stage may be rerun.
-        That is acceptable for this prototype.
-
-        If manifest says completed, checkpoint should already exist.
-        """
         checkpoint_path = self.write_checkpoint(job_id, metadata)
 
         self.manifest["completed"][job_id] = {
@@ -151,12 +107,6 @@ class BufferManager:
         return all(self.is_completed(job_id) for job_id in graph.all_jobs())
 
     def archive_active_run(self):
-        """
-        Archive state after successful workflow completion.
-
-        This is better than deleting during experiments because the archived
-        manifest/checkpoints are useful for later analysis.
-        """
         completed_root = STATE_ROOT / "completed"
         completed_root.mkdir(parents=True, exist_ok=True)
 
@@ -173,10 +123,5 @@ class BufferManager:
         return archive_path
 
     def clear(self):
-        """
-        Delete active state.
-
-        Use this only if you do not need preserved records.
-        """
         if self.state_dir.exists():
             shutil.rmtree(self.state_dir)

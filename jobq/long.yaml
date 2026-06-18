@@ -1,0 +1,20 @@
+jobs:
+  acquire:
+    command: "bash -c 'echo acquiring; sleep 20'"
+    deps: []
+    checkpoint: true
+
+  preprocess:
+    command: "bash -c 'echo preprocessing; sleep 60'"
+    deps: ["acquire"]
+    checkpoint: true
+
+  infer:
+    command: "bash -c 'echo inferencing; sleep 30'"
+    deps: ["preprocess"]
+    checkpoint: true
+
+  postprocess:
+    command: "bash -c 'echo postprocess; sleep 10'"
+    deps: ["infer"]
+    checkpoint: true
